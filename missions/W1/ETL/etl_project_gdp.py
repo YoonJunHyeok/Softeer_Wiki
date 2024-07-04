@@ -7,66 +7,81 @@ from datetime import datetime
 import pandas as pd
 from bs4 import BeautifulSoup
 
-def log_time(message):
+gdp_url = "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
+region_url = "https://restcountries.com/v3.1/all?fields=name,region"
+data_path = "Countries_by_GDP.json"
+log_path = "etl_project_log.txt"
+
+def logging(message):
     current_time = datetime.now().strftime("%Y-%B-%d-%H-%M-%S")
-    log_entry = f"{current_time}, {message}"
-    with open("etl_project_log.txt", "a") as log_file:
-        log_file.write(f"{log_entry}\n")
+    log = f"{current_time}, {message}"
+    with open(log_path, "a") as log_file:
+        log_file.write(f"{log}\n")
 
 def extract_gdp_data(url: str) -> pd.DataFrame:
-    log_time("Start of extraction from Wikipedia")
+    logging("Start of extraction from Wikipedia")
 
-    html_content = requests.get(url).text
+    response = requests.get(url)
 
-    soup = BeautifulSoup(html_content, "lxml")
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, "lxml")
 
-    gdp_table = soup.find("table", "wikitable")
+        gdp_table = soup.find("table", "wikitable")
 
-    table_df_list= pd.read_html(StringIO(str(gdp_table)))
-    gdp_df = table_df_list[0]
+        table_df_list= pd.read_html(StringIO(str(gdp_table)))
+        gdp_df = table_df_list[0]
 
-    selected_columns = [
-        ("Country/Territory", "Country/Territory"),
-        ("IMF[1][13]", "Forecast"),
-        ("IMF[1][13]", "Year")
-    ]
+        selected_columns = [
+            ("Country/Territory", "Country/Territory"),
+            ("IMF[1][13]", "Forecast"),
+            ("IMF[1][13]", "Year")
+        ]
 
-    gdp_df = gdp_df[selected_columns]
-    gdp_df.columns = ["Country", "GDP", "Year"]
-    gdp_df = gdp_df[gdp_df["Country"] != "World"]
+        gdp_df = gdp_df[selected_columns]
+        gdp_df.columns = ["Country", "GDP", "Year"]
 
-    gdp_df = gdp_df[(gdp_df["GDP"] != "—") & (gdp_df["Year"] != "—")]
-    gdp_df["Year"] = gdp_df["Year"].apply(lambda x: re.sub(r"\[\w+ \d+\]", "", x).strip())
-
-    return gdp_df
+        return gdp_df    
+    else:
+        raise Exception("Failed to fetch the webpage")
 
 def transform_gdp_data(gdp_df: pd.DataFrame) -> pd.DataFrame:
-    log_time("Start of transformation")
-    
-    gdp_df["GDP"] = (gdp_df["GDP"].astype(float) / 1000).map("{:.2f}".format)
+    logging("Start of transformation")
 
+    # World 제거
+    gdp_df = gdp_df[gdp_df["Country"] != "World"]
+
+    # 결측값 제거
+    gdp_df = gdp_df[(gdp_df["GDP"] != "—") & (gdp_df["Year"] != "—")]
+    # 연도에 같이 있는 주석 제거
+    gdp_df["Year"] = gdp_df["Year"].apply(lambda x: re.sub(r"\[\w+ \d+\]", "", x).strip())
+    # GDP, Year를 float로 변환
     gdp_df["GDP"] = gdp_df["GDP"].astype(float)
     gdp_df["Year"] = gdp_df["Year"].astype(int)
 
+    # 1B USD로 변환
+    gdp_df["GDP"] = (gdp_df["GDP"] / 1000).map("{:.2f}".format).astype(float)
+
+    # GDP 기준으로 내림차순 정렬
     gdp_df.sort_values(by=["GDP"], ascending=False, inplace=True)
 
-    log_time("End of transformation")
+    logging("End of transformation")
     return gdp_df
 
-def load_gdp_data(gdp_df: pd.DataFrame):
-    log_time("Start of load")
+def load_gdp_data(gdp_df: pd.DataFrame, data_path: str):
+    logging("Start of load")
     
-    gdp_df.to_json("Countries_by_GDP.json", orient="index", indent=4, force_ascii=False)
+    # JSON 파일로 저장
+    gdp_df.to_json(data_path, orient="records", indent=4, force_ascii=False)
 
-    log_time("End of load")
+    logging("End of load")
 
-def get_country_upper_100() -> list[str]:
-    gdp_df = pd.read_json("Countries_by_GDP.json", orient="index")
-    gdp_df = gdp_df[gdp_df["GDP"] > 100]
-    return gdp_df["Country"].tolist()
+def get_country_upper_n(data_path: str, n: int) -> list[str]:
+    gdp_df = pd.read_json(data_path, orient="records")
+    gdp_df = gdp_df[gdp_df["GDP"] >= n]
+    print(gdp_df["Country"].tolist())
 
-def top5_mean_gdp_by_region() -> dict:
-    response = requests.get("https://restcountries.com/v3.1/all?fields=name,region")
+def get_region_info() -> pd.DataFrame:
+    response = requests.get(region_url)
     regions_json = response.json()
 
     data = [{"Country": item["name"]["common"], "Region": item["region"]} for item in regions_json]
@@ -75,7 +90,12 @@ def top5_mean_gdp_by_region() -> dict:
     region_df.loc[region_df["Country"] == "Republic of the Congo", "Country"] = "Congo"
     region_df.loc[region_df["Country"] == "Timor-Leste", "Country"] = "East Timor"
 
-    gdp_df = pd.read_json("Countries_by_GDP.json", orient="index")
+    return region_df
+
+def top5_mean_gdp_by_region(data_path: str) -> dict:
+    region_df = get_region_info()
+
+    gdp_df = pd.read_json(data_path, orient="records")
 
     merged_df = pd.merge(left=gdp_df, right=region_df, on="Country", how="left")
 
@@ -87,15 +107,16 @@ def top5_mean_gdp_by_region() -> dict:
 
     print(top_5_gdp_means)
 
+def run() -> None:
+    get_country_upper_n(data_path, 100)
+    top5_mean_gdp_by_region(data_path)
 
-if __name__ == "__main__":
-    url = "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
-
+def ETL(url: str, data_path: str) -> None:
     gdp_df = extract_gdp_data(url)
     transformed_gdp_df = transform_gdp_data(gdp_df)
-    load_gdp_data(transformed_gdp_df)
+    load_gdp_data(transformed_gdp_df, data_path)
 
-    countries_upper_100 = get_country_upper_100()
-    print(countries_upper_100)
+if __name__ == "__main__":
+    ETL(gdp_url, data_path)
 
-    top5_mean_gdp_by_region()
+    run()
