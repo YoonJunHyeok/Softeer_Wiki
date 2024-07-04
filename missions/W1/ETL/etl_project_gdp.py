@@ -1,4 +1,3 @@
-# Importing the libraries
 import re
 import requests
 from io import StringIO
@@ -12,12 +11,18 @@ region_url = "https://restcountries.com/v3.1/all?fields=name,region"
 data_path = "Countries_by_GDP.json"
 log_path = "etl_project_log.txt"
 
+"""
+로그 파일에 로그 기록
+"""
 def logging(message):
     current_time = datetime.now().strftime("%Y-%B-%d-%H-%M-%S")
     log = f"{current_time}, {message}"
     with open(log_path, "a") as log_file:
         log_file.write(f"{log}\n")
 
+"""
+Wikipedia에서 GDP 데이터 추출 후 DataFrame으로 반환
+"""
 def extract_gdp_data(url: str) -> pd.DataFrame:
     logging("Start of extraction from Wikipedia")
 
@@ -44,6 +49,9 @@ def extract_gdp_data(url: str) -> pd.DataFrame:
     else:
         raise Exception("Failed to fetch the webpage")
 
+"""
+GDP 데이터를 조건에 맞게 변환
+"""
 def transform_gdp_data(gdp_df: pd.DataFrame) -> pd.DataFrame:
     logging("Start of transformation")
 
@@ -67,6 +75,9 @@ def transform_gdp_data(gdp_df: pd.DataFrame) -> pd.DataFrame:
     logging("End of transformation")
     return gdp_df
 
+"""
+JSON 파일로 저장
+"""
 def load_gdp_data(gdp_df: pd.DataFrame, data_path: str):
     logging("Start of load")
     
@@ -75,11 +86,17 @@ def load_gdp_data(gdp_df: pd.DataFrame, data_path: str):
 
     logging("End of load")
 
+"""
+n Billion USD 이상의 GDP를 가진 국가 출력
+"""
 def get_country_upper_n(data_path: str, n: int) -> list[str]:
     gdp_df = pd.read_json(data_path, orient="records")
     gdp_df = gdp_df[gdp_df["GDP"] >= n]
     print(gdp_df["Country"].tolist())
 
+"""
+API를 통해 각 Country의 Region 정보 DataFrame으로 반환
+"""
 def get_region_info() -> pd.DataFrame:
     response = requests.get(region_url)
     regions_json = response.json()
@@ -92,6 +109,9 @@ def get_region_info() -> pd.DataFrame:
 
     return region_df
 
+"""
+각각의 Region 별로 GDP 상위 5개 국가의 평균 GDP 값 반환
+"""
 def top5_mean_gdp_by_region(data_path: str) -> dict:
     region_df = get_region_info()
 
@@ -107,10 +127,16 @@ def top5_mean_gdp_by_region(data_path: str) -> dict:
 
     print(top_5_gdp_means)
 
+"""
+화면 출력 요구사항 실행
+"""
 def run() -> None:
     get_country_upper_n(data_path, 100)
     top5_mean_gdp_by_region(data_path)
 
+"""
+ETL 프로세스 실행
+"""
 def ETL(url: str, data_path: str) -> None:
     gdp_df = extract_gdp_data(url)
     transformed_gdp_df = transform_gdp_data(gdp_df)
