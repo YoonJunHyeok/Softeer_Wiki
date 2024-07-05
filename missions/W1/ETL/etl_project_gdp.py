@@ -70,9 +70,7 @@ def get_region_info() -> pd.DataFrame:
         data = [{"Country": item["name"]["common"], "Region": item["region"]} for item in regions_json]
         region_df = pd.DataFrame(data)
         # 예외처리
-        region_df.loc[region_df["Country"] == "Czechia", "Country"] = "Czech Republic"
-        region_df.loc[region_df["Country"] == "Republic of the Congo", "Country"] = "Congo"
-        region_df.loc[region_df["Country"] == "Timor-Leste", "Country"] = "East Timor"
+        region_df.replace({"Czechia": "Czech Republic", "Republic of the Congo": "Congo", "Timor-Leste": "East Timor"}, inplace=True)
 
         return region_df
     except Exception as e:
@@ -90,12 +88,10 @@ def process_row(row: pd.Series) -> pd.Series:
     # 연도에 같이 있는 주석 제거
     row["Year"] = re.sub(r"\[\w+ \d+\]", "", row["Year"]).strip()
 
-    # GDP, Year를 float로 변환
-    row["GDP"] = float(row["GDP"])
+    # GDP, Year 변환
+    row["GDP"] = round(float(row["GDP"]) / 1000, 2)
     row["Year"] = int(row["Year"])
-
-    # 1B USD로 변환
-    row["GDP"] = round((row["GDP"] / 1000), 2)
+    
     return row
 
 """
@@ -147,7 +143,7 @@ n Billion USD 이상의 GDP를 가진 국가 출력
 def get_country_upper_n(data_path: str, n: int) -> list[str]:
     gdp_df = pd.read_json(data_path, orient="records")
     gdp_df = gdp_df[gdp_df["GDP"] >= n]
-    print(gdp_df["Country"].tolist())
+    return gdp_df["Country"].tolist()
 
 
 """
@@ -162,14 +158,17 @@ def top5_mean_gdp_by_region(data_path: str) -> dict:
         .reset_index(name="Top 5 GDP Mean")
     )
 
-    print(top_5_gdp_means)
+    return top_5_gdp_means
 
 """
 화면 출력 요구사항 실행
 """
 def run() -> None:
-    get_country_upper_n(data_path, 100)
-    top5_mean_gdp_by_region(data_path)
+    print("GDP가 100B USD이상이 되는 국가: ")
+    print(get_country_upper_n(data_path, 100))
+    print()
+    print("각 Region별로 top5 국가의 GDP 평균: ")
+    print(top5_mean_gdp_by_region(data_path))
 
 """
 ETL 프로세스 실행

@@ -32,12 +32,13 @@ class SQLExecutor:
     def __init__(self, database, table=None):
         self.database = database
         self.table = table
-
-        if not os.path.exists(database):
-            open(database, 'w').close()
-
+        self._ensure_database_exists()
         if table:
             self.create_table()
+
+    def _ensure_database_exists(self):
+        if not os.path.exists(self.database):
+            open(self.database, 'w').close()
 
     def create_table(self):
         create_table_query = f"""
@@ -76,19 +77,15 @@ class SQLExecutor:
                 query_type = cleaned_query.split()[0].upper()
 
                 if query_type in ['SELECT', 'WITH']:
-                    result = cur.fetchall()
-                    return result
+                    return cur.fetchall()
                 elif query_type in ['INSERT', 'UPDATE', 'DELETE', 'CREATE']:
                     conn.commit()
-                    if query_type == 'INSERT':
-                        return cur.lastrowid
-                    else:
-                        return cur.rowcount
+                    return cur.lastrowid if query_type == 'INSERT' else cur.rowcount
                 else:
                     print("Unsupported query type")
                     return None
         except sqlite3.Error as e:
-            raise Exception(f"Error during sql: {e}")
+            raise Exception(f"Error during SQL execution: {e}")
 
 def extract_gdp_data(url: str) -> pd.DataFrame:
     logging("Starting extraction", LogLevel.INFO)
@@ -126,10 +123,7 @@ def get_region_info() -> pd.DataFrame:
         data = [{"Country": item["name"]["common"], "Region": item["region"]} for item in regions_json]
         region_df = pd.DataFrame(data)
         # 예외처리
-        region_df.loc[region_df["Country"] == "Czechia", "Country"] = "Czech Republic"
-        region_df.loc[region_df["Country"] == "Republic of the Congo", "Country"] = "Congo"
-        region_df.loc[region_df["Country"] == "Timor-Leste", "Country"] = "East Timor"
-
+        region_df.replace({"Czechia": "Czech Republic", "Republic of the Congo": "Congo", "Timor-Leste": "East Timor"}, inplace=True)
         return region_df
     except Exception as e:
         raise Exception("Error during region info extraction")
@@ -146,12 +140,10 @@ def process_row(row: pd.Series) -> pd.Series:
     # 연도에 같이 있는 주석 제거
     row["Year"] = re.sub(r"\[\w+ \d+\]", "", row["Year"]).strip()
 
-    # GDP, Year를 float로 변환
-    row["GDP"] = float(row["GDP"])
+    # GDP, Year 변환
+    row["GDP"] = round(float(row["GDP"]) / 1000, 2)
     row["Year"] = int(row["Year"])
 
-    # 1B USD로 변환
-    row["GDP"] = round((row["GDP"] / 1000), 2)
     return row
 
 def transform_gdp_data(gdp_df: pd.DataFrame) -> pd.DataFrame:
@@ -202,7 +194,7 @@ def get_country_upper_n(db_path: str, table_name: str, n: int) -> list[str]:
                 WHERE GDP_USD_billion >= {n}"""
 
     result = executor.run_sql(query)
-    print(result)
+    return result
 
 def topN_mean_gdp_by_region(db_path: str, table_name: str, n: int) -> dict:
     executor = SQLExecutor(database=db_path)
@@ -221,11 +213,14 @@ def topN_mean_gdp_by_region(db_path: str, table_name: str, n: int) -> dict:
             """
 
     result = executor.run_sql(query)
-    print(result)
+    return result
 
 def run() -> None:
-    get_country_upper_n(db_path, table_name, 100)
-    topN_mean_gdp_by_region(db_path, table_name, 5)
+    print("GDP가 100B USD이상이 되는 국가: ")
+    print(get_country_upper_n(db_path, table_name, 100))
+    print()
+    print("각 Region별로 top5 국가의 GDP 평균: ")
+    print(topN_mean_gdp_by_region(db_path, table_name, 5))
 
 def ETL(url: str, db_path: str, table_name: str) -> None:
     gdp_df = extract_gdp_data(url)
