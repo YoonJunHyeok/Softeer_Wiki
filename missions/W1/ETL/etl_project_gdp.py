@@ -1,3 +1,4 @@
+import os
 import re
 import requests
 from enum import Enum
@@ -8,10 +9,17 @@ from multiprocessing import Pool
 import pandas as pd
 from bs4 import BeautifulSoup
 
-gdp_url = "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
-region_url = "https://restcountries.com/v3.1/all?fields=name,region"
-data_path = "Countries_by_GDP.json"
-log_path = "etl_project_log.txt"
+from dotenv import load_dotenv
+
+class Config:
+    def __init__(self):
+        load_dotenv()
+        self.gdp_url = os.getenv('GDP_URL')
+        self.region_url = os.getenv('REGION_URL')
+        self.data_path = os.getenv('DATA_PATH')
+        self.log_path = os.getenv('LOG_PATH')
+
+config = Config()
 
 class LogLevel(Enum):
     INFO = "INFO"
@@ -25,7 +33,7 @@ class LogLevel(Enum):
 def logging(message: str, level: LogLevel) -> None:
     current_time = datetime.now().strftime("%Y-%B-%d-%H-%M-%S")
     log = f"[{level.value}]: {current_time}, {message}"
-    with open(log_path, "a") as log_file:
+    with open(config.log_path, "a") as log_file:
         log_file.write(f"{log}\n")
 
 """
@@ -64,7 +72,7 @@ API를 통해 각 Country의 Region 정보 DataFrame으로 반환
 """
 def get_region_info() -> pd.DataFrame:
     try:
-        response = requests.get(region_url)
+        response = requests.get(config.region_url)
         regions_json = response.json()
 
         data = [{"Country": item["name"]["common"], "Region": item["region"]} for item in regions_json]
@@ -165,10 +173,10 @@ def top5_mean_gdp_by_region(data_path: str) -> dict:
 """
 def run() -> None:
     print("GDP가 100B USD이상이 되는 국가: ")
-    print(get_country_upper_n(data_path, 100))
+    print(get_country_upper_n(config.data_path, 100))
     print()
     print("각 Region별로 top5 국가의 GDP 평균: ")
-    print(top5_mean_gdp_by_region(data_path))
+    print(top5_mean_gdp_by_region(config.data_path))
 
 """
 ETL 프로세스 실행
@@ -179,6 +187,6 @@ def ETL(url: str, data_path: str) -> None:
     load_gdp_data(transformed_gdp_df, data_path)
 
 if __name__ == "__main__":
-    ETL(gdp_url, data_path)
+    ETL(config.gdp_url, config.data_path)
 
     run()

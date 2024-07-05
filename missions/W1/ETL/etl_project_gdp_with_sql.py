@@ -9,12 +9,18 @@ from multiprocessing import Pool
 import sqlite3
 import pandas as pd
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
-gdp_url = "https://en.wikipedia.org/wiki/List_of_countries_by_GDP_(nominal)"
-region_url = "https://restcountries.com/v3.1/all?fields=name,region"
-db_path = "World_Economies.db"
-table_name = "Countries_by_GDP"
-log_path = "etl_project_log.txt"
+class Config:
+    def __init__(self):
+        load_dotenv()
+        self.gdp_url = os.getenv('GDP_URL')
+        self.region_url = os.getenv('REGION_URL')
+        self.db_path = os.getenv('DB_PATH')
+        self.table_name = os.getenv('TABLE_NAME')
+        self.log_path = os.getenv('LOG_PATH')
+
+config = Config()
 
 class LogLevel(Enum):
     INFO = "INFO"
@@ -25,7 +31,7 @@ class LogLevel(Enum):
 def logging(message: str, level: LogLevel) -> None:
     current_time = datetime.now().strftime("%Y-%B-%d-%H-%M-%S")
     log = f"[{level.value}]: {current_time}, {message}"
-    with open(log_path, "a") as log_file:
+    with open(config.log_path, "a") as log_file:
         log_file.write(f"{log}\n")
 
 class SQLExecutor:
@@ -117,7 +123,7 @@ def extract_gdp_data(url: str) -> pd.DataFrame:
     
 def get_region_info() -> pd.DataFrame:
     try:
-        response = requests.get(region_url)
+        response = requests.get(config.region_url)
         regions_json = response.json()
 
         data = [{"Country": item["name"]["common"], "Region": item["region"]} for item in regions_json]
@@ -217,10 +223,11 @@ def topN_mean_gdp_by_region(db_path: str, table_name: str, n: int) -> dict:
 
 def run() -> None:
     print("GDP가 100B USD이상이 되는 국가: ")
-    print(get_country_upper_n(db_path, table_name, 100))
+    print(get_country_upper_n(config.db_path, config.table_name, 100))
     print()
     print("각 Region별로 top5 국가의 GDP 평균: ")
-    print(topN_mean_gdp_by_region(db_path, table_name, 5))
+    print(topN_mean_gdp_by_region(config.db_path, config.table_name, 5))
+
 
 def ETL(url: str, db_path: str, table_name: str) -> None:
     gdp_df = extract_gdp_data(url)
@@ -228,6 +235,6 @@ def ETL(url: str, db_path: str, table_name: str) -> None:
     load_gdp_data(transformed_gdp_df, db_path, table_name)
 
 if __name__ == "__main__":
-    ETL(gdp_url, db_path, table_name)
+    ETL(config.gdp_url, config.db_path, config.table_name)
 
     run()
