@@ -4,11 +4,9 @@ import requests
 from enum import Enum
 from io import StringIO
 from datetime import datetime
-from multiprocessing import Pool
 
 import pandas as pd
 from bs4 import BeautifulSoup
-
 from dotenv import load_dotenv
 
 class Config:
@@ -84,24 +82,6 @@ def get_region_info() -> pd.DataFrame:
     except Exception as e:
         raise Exception("Error during region info extraction")
 
-def process_row(row: pd.Series) -> pd.Series:
-    # World 제거
-    if row["Country"] == "World":
-        return None
-
-    # 결측값 제거
-    if row["GDP"] == "—" or row["Year"] == "—":
-        return None
-
-    # 연도에 같이 있는 주석 제거
-    row["Year"] = re.sub(r"\[\w+ \d+\]", "", row["Year"]).strip()
-
-    # GDP, Year 변환
-    row["GDP"] = round(float(row["GDP"]) / 1000, 2)
-    row["Year"] = int(row["Year"])
-    
-    return row
-
 """
 GDP 데이터를 조건에 맞게 변환
 """
@@ -112,10 +92,18 @@ def transform_gdp_data(gdp_df: pd.DataFrame) -> pd.DataFrame:
         # 열 이름 변경
         gdp_df.columns = ["Country", "GDP", "Year"]
 
-        with Pool() as pool:
-            processed_rows = pool.map(process_row, [row for _, row in gdp_df.iterrows()])
-        
-        gdp_df = pd.DataFrame([row for row in processed_rows if row is not None])
+        # World 제거
+        gdp_df = gdp_df[gdp_df["Country"] != "World"]
+
+        # 결측값 제거
+        gdp_df = gdp_df[(gdp_df["GDP"] != "—") & (gdp_df["Year"] != "—")]
+
+        # 연도에 같이 있는 주석 제거
+        gdp_df["Year"] = gdp_df["Year"].apply(lambda x: re.sub(r"\[\w+ \d+\]", "", x).strip())
+
+        # GDP, Year  변환
+        gdp_df["GDP"] = round(gdp_df["GDP"].astype(float) / 1000, 2)
+        gdp_df["Year"] = gdp_df["Year"].astype(int)
 
         # Region 정보 추가
         region_df = get_region_info()
